@@ -397,7 +397,8 @@ function shade(hex, f) {
 const pal = hex => ({base: hex, hi: shade(hex, .55), lo: shade(hex, -.3), dark: shade(hex, -.75)});
 // だんごとの いろ
 const DAN = [null, '#c2c3c7', '#ff77a8', '#29adff', '#00e436', '#ffa300', '#ffec27', '#b08cff', '#ff4060', '#e0875a'].map(h => h && pal(h));
-const GRP = P.green; // いくつぶん の いろ
+const GRP = P.green; // かける かず の いろ
+const AC = P.pink;   // かけられる かず の いろ (十=オレンジ・一=青 と かぶらない)
 // 九九の となえかた
 const KUKU = [null,
   ['いんいち が いち', 'いんに が に', 'いんさん が さん', 'いんし が し', 'いんご が ご', 'いんろく が ろく', 'いんしち が しち', 'いんはち が はち', 'いんく が く'],
@@ -438,13 +439,17 @@ function makeChoices(a, b) {
   return shuffle(out);
 }
 
-// マット: 1れつ(いくつぶん) に a こ ならぶ
-const M = {hd: 1.7, lw: 1.9, cs: 1.15, gap5: .35, rw: 3.4, rh: 1.25};
-const GRIDW = 9 * M.cs + M.gap5;
-const MATW = M.lw + GRIDW + .3 + M.rw, MATH = M.hd + 9 * M.rh + .3;
-const cubeX = j => M.lw + j * M.cs + (j >= 5 ? M.gap5 : 0);
-const rowY = i => M.hd + .15 + i * M.rh;
-const TOTX = M.lw + GRIDW + .3 + M.rw / 2;
+// ばんめん: ひっさん + ヒントの かいだん  単位は L.c
+// ひっさんは ローカルざひょう (よこ 0〜8.3, たて 0〜13.2) で かいて、ヒントの ときは ちぢめて ひだりへ
+let MATW = 16, MATH = 13.2;
+const HW = 8.3, HH = 13.2;
+const ROW_A = 3.6, ROW_B = 6.9, LINE_Y = 8.5, BOX_Y = 10.85;
+const colX = k => k === 0 ? 1 : k === 1 ? 3.5 : 6.5; // 0: きごう 1: 十 2: 一
+function hissanTf() {
+  const h = G.hint || 0;
+  if (L.portrait) { const hs = 1 - .47 * h; return {hs, hx: (MATW - HW) / 2 * (1 - h) + .05 * h, vy: (MATH - HH * hs) / 2, lx: HW * .53 + .35}; }
+  return {hs: 1, hx: .3 + (1 - h) * 3.7, vy: 0, lx: 8.9};
+}
 
 // =====================================================================
 //  SCENES
@@ -468,7 +473,7 @@ scenes.title = {
   draw() {
     const u = L.u, s = u * .05;
     ctx.globalAlpha = .45;
-    for (const f of this.fall) cube(f.x * W, f.y * H, s, DAN[f.d]);
+    for (const f of this.fall) ptext('' + f.d, f.x * W, f.y * H, s / 5, DAN[f.d].base, {shadow: false});
     ctx.globalAlpha = 1;
     const cx = L.x0 + L.w / 2, k = Math.min(u, L.h * .75), yy = f => L.y0 + L.h * f;
     jtext('ピコピコ', cx, yy(.16), k * .11, P.yellow, {outline: P.plum});
@@ -477,13 +482,7 @@ scenes.title = {
       const col = [P.pink, P.blue, P.green, P.orange][i];
       jtext(word[i], cx + (i - 1.5) * step, cy + Math.sin(T * 4 + i * .8) * sz * .08, sz, col, {outline: '#000'});
     }
-    // 3×4 の ならび
-    const cs = k * .045, gx = cx - (4 * cs * 1.15) / 2;
-    for (let r = 0; r < 3; r++) for (let j = 0; j < 4; j++) {
-      const on = (Math.floor(T * 2) % 4) >= r;
-      ctx.globalAlpha = on ? 1 : .35; cube(gx + j * cs * 1.15, yy(.46) + r * cs * 1.2, cs, DAN[4]);
-    }
-    ctx.globalAlpha = 1;
+    ptext('7×8=56', cx, yy(.5), k * .016, [AC, P.white, GRP, P.white, TEN.base, ONE.base]);
     const mpx = k * .016, mw = 13 * mpx, bob = Math.abs(Math.sin(T * 5)) * k * .04;
     sprite(Math.sin(T * 1.3) > .7 ? SPR.catHappy : SPR.cat, cx - mw / 2, yy(.78) - bob - 11 * mpx, mpx, CATPAL);
     if (Math.sin(T * 5) > -.3) jtext('タッチして スタート!', cx, yy(.91), k * .065, P.white, {outline: P.navy});
@@ -531,9 +530,8 @@ function drawCard(b, st, i) {
     const px = Math.min(h * .42 / 7, w * .3 / 5);
     ptext('' + st.d, -w * .2, top + h * .42, px, DAN[st.d].base);
     jtext('のだん', w * .14, top + h * .47, Math.min(h * .2, w * .5 / 3), P.white, {outline: '#0009'});
-    // ミニ ならび
-    const cs = Math.min(h * .11, w * .85 / (st.d * 1.2));
-    for (let j = 0; j < st.d; j++) cube(-st.d * cs * 1.2 / 2 + j * cs * 1.2, top + h * .78, cs, DAN[st.d]);
+    const seq = `${st.d}・${st.d * 2}・${st.d * 3}…`;
+    jtext(seq, 0, top + h * .8, Math.min(h * .13, w * .9 / seq.length * 1.6), DAN[st.d].hi, {outline: '#000a'});
   } else if (st.kind === 'hyou') {
     emo('📖', 0, top + h * .36, h * .3);
     jtext(st.name, 0, top + h * .68, Math.min(h * .17, w * .9 / 5), P.white, {outline: '#0009'});
@@ -598,7 +596,7 @@ scenes.hyou = {
       const x = gx + sel.b * cs, y = gy + sel.a * cs;
       ctx.strokeStyle = P.yellow; ctx.lineWidth = 3 + Math.sin(T * 8) * 1.5; ctx.strokeRect(x, y, cs, cs);
       const c = this.cap, eq = `${sel.a}×${sel.b}=${sel.a * sel.b}`;
-      ptext(eq, c.x + c.w / 2, c.y + c.h * .32, Math.min(c.h * .25 / 7, c.w * .9 / (eq.length * 6)), [DAN[sel.a].base, P.white, GRP, P.white, ...numCols(sel.a * sel.b)]);
+      ptext(eq, c.x + c.w / 2, c.y + c.h * .32, Math.min(c.h * .25 / 7, c.w * .9 / (eq.length * 6)), [AC, P.white, GRP, P.white, ...numCols(sel.a * sel.b)]);
       const t = kuku(sel.a, sel.b);
       jtext(t, c.x + c.w / 2, c.y + c.h * .68, Math.min(c.h * .2, c.w * .9 / t.length), P.yellow);
     } else {
@@ -629,9 +627,9 @@ scenes.play = {
   enter() {
     this.home = iconBtn('🏠', () => { sfx.tap(); newFlow(); if (window.speechSynthesis) speechSynthesis.cancel(); setScene('select'); });
     this.say = iconBtn('🔊', () => { sfx.tap(); if (G.phase !== 'clear') speak(`${G.a} かける ${G.b} は?`); });
-    this.count = Btn({col: P.green, dcol: P.dgreen, vis: false, sc: 0, onTap: () => { sfx.tap(); run(doCount()); },
+    this.count = Btn({col: P.green, dcol: P.dgreen, vis: false, sc: 0, onTap: () => { sfx.tap(); run(doHint()); },
       draw(b) { const a = (T * 6) % (Math.PI * 2);
-        jtext('かぞえる!', 0, 0, Math.min(b.h * .45, b.w * .8 / 5), P.white, {outline: P.dgreen});
+        jtext('ヒント!', 0, 0, Math.min(b.h * .45, b.w * .8 / 5), P.white, {outline: P.dgreen});
         ctx.fillStyle = P.yellow; const s = b.h * .12;
         for (const sx of [-1, 1]) { const x = sx * b.w * .42, y = Math.sin(a) * s * .4; ctx.beginPath(); ctx.moveTo(x - s, y - s * .5); ctx.lineTo(x + s, y - s * .5); ctx.lineTo(x, y + s * .8); ctx.fill(); }
       }});
@@ -649,6 +647,7 @@ scenes.play = {
     this.clearBtns = [this.again, this.next, this.back];
   },
   layout() {
+    MATW = L.portrait ? 9.2 : 16;
     const {x0, y0, w, h} = L, bar = L.bar;
     Object.assign(this.home, {x: x0 + 6, y: y0 + 6, w: bar, h: bar});
     Object.assign(this.say, {x: x0 + w - bar - 6, y: y0 + 6, w: bar, h: bar});
@@ -670,6 +669,7 @@ scenes.play = {
       const top = this.count.y + mh + 12, gap = 8, bh = (y0 + h - 8 - top - 2 * gap) / 3;
       this.choices.forEach((b, i) => Object.assign(b, {x: sx, y: top + i * (bh + gap), w: sw - 8, h: bh}));
     }
+    MATW = L.portrait ? 9.2 : 16;
     const c = L.c = Math.min(ma.w / (MATW + .6), ma.h / (MATH + .6));
     L.mat = {x: ma.x + (ma.w - MATW * c) / 2, y: ma.y + (ma.h - MATH * c) / 2, w: MATW * c, h: MATH * c};
     const bw = Math.min(w * .29, 240), bh = clamp(L.u * .13, 50, 100), gap = w * .02;
@@ -677,7 +677,7 @@ scenes.play = {
   },
   update(dt) {
     for (const b of [...this.btns, ...this.clearBtns]) b.press = Math.max(0, b.press - dt * 6);
-    if (this.count.vis && !G.counting && G.phase === 'ask') this.count.sc = 1 + Math.sin(T * 7) * .05;
+    if (this.count.vis && !G.hinting && G.phase === 'ask') this.count.sc = 1 + Math.sin(T * 7) * .05;
     for (const f of G.flyers) f.t += dt;
     for (const f of G.flyers.filter(f => f.t >= f.dur)) { G.stars[f.i] = f.gold ? 2 : 1; sfx.coin(); const p = slotPos(f.i); burst(p.x, p.y, 14, [P.yellow, P.white], .5, .7); }
     G.flyers = G.flyers.filter(f => f.t < f.dur);
@@ -743,7 +743,7 @@ function drawQuestion() {
   const ppx = Math.min(areaW / (n * 6), q.h * .62 / 7);
   const tw = n * 6 * ppx - ppx, sx = areaX + (areaW - tw) / 2, y = q.y + q.h / 2;
   ctx.save(); ctx.translate(sx + tw / 2, y); ctx.scale(G.qA, G.qA); ctx.translate(-(sx + tw / 2), -y);
-  ptext(left, sx, y, ppx, [DAN[G.a].base, P.white, GRP, P.white], {align: 'left'});
+  ptext(left, sx, y, ppx, [AC, P.white, GRP, P.white], {align: 'left'});
   const ax = sx + left.length * 6 * ppx;
   if (G.reveal > 0) {
     const w = ans.length * 6 * ppx;
@@ -757,7 +757,7 @@ function drawBubble() {
   const size = clamp(L.u * .055, 16, 36);
   ctx.font = `${Math.round(size)}px ${FONT}`;
   const tw = ctx.measureText(bb.text).width, pw = tw + size * 1.2, ph = size * 1.8;
-  const x = L.mat.x + L.mat.w / 2 - pw / 2, y = L.mat.y + L.mat.h * .45;
+  const x = L.mat.x + L.mat.w / 2 - pw / 2, y = L.mat.y - ph * .6;
   ctx.globalAlpha = Math.min(1, bb.life * 3);
   ctx.fillStyle = '#000a'; rrect(x + 3, y + 3, pw, ph, ph * .3); ctx.fill();
   ctx.fillStyle = P.white; rrect(x, y, pw, ph, ph * .3); ctx.fill();
@@ -766,53 +766,130 @@ function drawBubble() {
 }
 function say(text, life = 2.2, col) { G.bubble = {text, life, col}; }
 
+function glowDigits(str, x, y, px, cols, glow, o = {}) {
+  if (glow > 0) { ctx.save(); ctx.shadowColor = typeof cols === 'string' ? cols : cols[cols.length - 1]; ctx.shadowBlur = px * 12 * glow; ptext(str, x, y, px, cols, {shadow: false}); ctx.restore(); }
+  ptext(str, x, y, px, cols, o);
+}
 function drawMat() {
   const m = L.mat, c = L.c, X = u => m.x + u * c, Y = u => m.y + u * c;
   ctx.fillStyle = '#0b1230'; rrect(m.x - c * .35, m.y - c * .35, m.w + c * .7, m.h + c * .7, c * .6); ctx.fill();
   ctx.strokeStyle = '#3b4a7d'; ctx.lineWidth = Math.max(2, c * .15); ctx.stroke();
-  ctx.fillStyle = 'rgba(0,228,54,.06)'; ctx.fillRect(m.x, Y(M.hd), M.lw * c, m.h - M.hd * c);
-  ctx.fillStyle = 'rgba(255,236,39,.06)'; ctx.fillRect(X(M.lw + GRIDW + .3), Y(M.hd), M.rw * c, m.h - M.hd * c);
-  ctx.fillStyle = '#3b4a7d'; ctx.fillRect(m.x, Y(M.hd) - c * .05, m.w, c * .1);
-  if (G.phase === 'intro' && G.qA === 0) return;
-  // みだし
-  const hy = Y(M.hd / 2);
-  if (G.reveal > 0) {
-    const t = kuku(G.a, G.b);
-    jtext(t, m.x + m.w / 2, hy, Math.min(c * 1.1, m.w * .9 / t.length), P.yellow, {outline: '#000'});
-  } else {
-    const t1 = `${G.a}こずつ`, t2 = ' が ', t3 = `${G.b}つぶん`;
-    const sz = Math.min(c * 1.0, m.w * .9 / (t1.length + t2.length + t3.length));
-    ctx.font = `${Math.round(sz)}px ${FONT}`;
-    const w1 = ctx.measureText(t1).width, w2 = ctx.measureText(t2).width, w3 = ctx.measureText(t3).width;
-    let x = m.x + m.w / 2 - (w1 + w2 + w3) / 2;
-    jtext(t1, x, hy, sz, DAN[G.a].base, {align: 'left'}); x += w1;
-    jtext(t2, x, hy, sz, P.white, {align: 'left'}); x += w2;
-    jtext(t3, x, hy, sz, GRP, {align: 'left'});
-  }
-  // おさら (1つぶん)
-  const pw = cubeX(G.a - 1) + 1 + .2 - (M.lw - .2);
-  for (const pl of G.plates) {
-    const y = Y(rowY(pl.i) - .08), h = 1.16 * c;
-    ctx.fillStyle = `rgba(255,255,255,${.06 + pl.fl * .45})`; rrect(X(M.lw - .2), y, pw * c * pl.w, h, c * .3); ctx.fill();
-    ctx.strokeStyle = DAN[G.a].base; ctx.globalAlpha = .55 * pl.w; ctx.lineWidth = Math.max(1, c * .08); ctx.stroke(); ctx.globalAlpha = pl.w;
-    ptext('' + (pl.i + 1), X(M.lw / 2 - .1), Y(rowY(pl.i) + .5), c * .12, GRP);
-    ctx.globalAlpha = 1;
-  }
-  // たしていく かず
-  for (const t of G.totals) {
-    ctx.globalAlpha = t.a;
-    const last = t.i === G.b - 1;
-    if (last && G.counted) { ctx.strokeStyle = P.yellow; ctx.lineWidth = c * .1; ctx.strokeRect(X(M.lw + GRIDW + .45), Y(rowY(t.i) - .1), (M.rw - .3) * c, 1.2 * c); }
-    ptext('' + t.v, X(TOTX), Y(rowY(t.i) + .5), c * .13 * t.sc, numCols(t.v));
-    if (t.i > 0) ptext('+' + G.a, X(TOTX - M.rw / 2 - .2), Y(rowY(t.i) - .05), c * .07, P.lgray, {align: 'right', shadow: false});
-    ctx.globalAlpha = 1;
-  }
-  for (const b of G.blocks) {
-    const s = c * .94, cx = X(b.x + .5), cy = Y(b.y + .5);
-    ctx.save(); ctx.globalAlpha = b.a; ctx.translate(cx, cy); ctx.scale(b.s, b.s);
-    cube(-s / 2, -s / 2, s, DAN[G.a]);
-    if (b.fl > 0) { ctx.globalAlpha = b.a * b.fl; ctx.fillStyle = '#fff'; ctx.fillRect(-s / 2, -s / 2, s, s); }
+  if (!G.bd || (G.phase === 'intro' && G.qA === 0)) return;
+  const bd = G.bd, tf = hissanTf(), hs = tf.hs, dpx = c * .4 * hs;
+  const HX = u => X(tf.hx + u * hs), HY = v => Y(tf.vy + v * hs), hc = c * hs;
+  // ぐるぐる ひかり
+  if (G.rays > 0 && G.rayC) {
+    ctx.save(); rrect(m.x - c * .3, m.y - c * .3, m.w + c * .6, m.h + c * .6, c * .6); ctx.clip();
+    ctx.translate(HX(G.rayC.x), HY(G.rayC.y)); ctx.rotate(T * .8);
+    const R = m.w * 1.2;
+    for (let i = 0; i < 16; i++) {
+      ctx.fillStyle = i % 2 ? `rgba(255,236,39,${.16 * G.rays})` : `rgba(255,119,168,${.12 * G.rays})`;
+      const a0 = i / 16 * Math.PI * 2, a1 = (i + .5) / 16 * Math.PI * 2;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a0) * R, Math.sin(a0) * R); ctx.lineTo(Math.cos(a1) * R, Math.sin(a1) * R); ctx.fill();
+    }
     ctx.restore();
+  }
+  // くらいの れつ
+  ctx.fillStyle = 'rgba(255,163,0,.10)'; rrect(HX(2.05), HY(1.5), 2.9 * hc, 11.4 * hc, hc * .3); ctx.fill();
+  ctx.fillStyle = 'rgba(41,173,255,.10)'; rrect(HX(5.05), HY(1.5), 2.9 * hc, 11.4 * hc, hc * .3); ctx.fill();
+  // みだし / となえかた
+  if (G.chantN > 0) {
+    const t = kuku(G.a, G.b), n = Math.floor(G.chantN), sz = Math.min(c * 1.0, m.w * .9 / t.length);
+    ctx.font = `${Math.round(sz)}px ${FONT}`; const fw = ctx.measureText(t).width;
+    ctx.save(); ctx.shadowColor = P.orange; ctx.shadowBlur = sz * .25;
+    jtext(t.slice(0, n), m.x + m.w / 2 - fw / 2, Y(.8 * Math.max(hs, .8)), sz, P.yellow, {align: 'left', outline: '#000'});
+    ctx.restore();
+  } else {
+    const sz = Math.min(hc * .6, 2.9 * hc / 5.2);
+    jtext('十のくらい', HX(3.5), HY(.85), sz, TEN.base, {outline: '#000'});
+    jtext('一のくらい', HX(6.5), HY(.85), sz, ONE.base, {outline: '#000'});
+  }
+  // かけられる かず
+  if (bd.aS > 0) {
+    ctx.save(); ctx.translate(HX(colX(2)), HY(ROW_A)); const s = bd.aS * (1 + bd.aP * .35); ctx.scale(s, s);
+    glowDigits('' + G.a, 0, 0, dpx, AC, bd.aP); ctx.restore();
+  }
+  // ×
+  if (bd.xS > 0) {
+    ctx.save(); ctx.translate(HX(colX(0)), HY(ROW_B)); ctx.rotate((1 - bd.xS) * Math.PI * 2); ctx.scale(bd.xS, bd.xS);
+    ptext('×', 0, 0, hc * .3, P.white); ctx.restore();
+  }
+  // かける かず
+  if (bd.bS > 0) {
+    ctx.save(); ctx.translate(HX(colX(2)), HY(ROW_B)); const s = bd.bS * (1 + bd.bP * .35); ctx.scale(s, s);
+    glowDigits('' + G.b, 0, 0, dpx, GRP, bd.bP); ctx.restore();
+  }
+  // せん
+  if (bd.line > 0) {
+    ctx.fillStyle = '#000a'; ctx.fillRect(HX(.4) + hc * .1, HY(LINE_Y) + hc * .1, 7.4 * hc * bd.line, hc * .26);
+    ctx.fillStyle = P.white; ctx.fillRect(HX(.4), HY(LINE_Y), 7.4 * hc * bd.line, hc * .26);
+  }
+  // こたえの はこ
+  if (bd.box > 0) {
+    for (const [k, col, fl] of [[1, TEN, bd.tF], [2, ONE, bd.oF]]) {
+      const x = HX(colX(k) - 1.3), y = HY(BOX_Y - 1.6), w = 2.6 * hc, h = 3.2 * hc;
+      ctx.globalAlpha = bd.box;
+      ctx.fillStyle = `rgba(255,255,255,${.04 + .06 * Math.sin(T * 4) ** 2})`; ctx.fillRect(x, y, w, h);
+      if (fl > 0) { ctx.fillStyle = col.base; ctx.globalAlpha = bd.box * fl * .7; ctx.fillRect(x, y, w, h); ctx.globalAlpha = bd.box; }
+      ctx.setLineDash([hc * .3, hc * .2]); ctx.strokeStyle = col.base; ctx.lineWidth = hc * .1; ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+  }
+  // ビーム
+  for (const bm of G.beams) {
+    if (bm.p <= 0 || bm.a <= 0) continue;
+    const pt = t => ({x: (1 - t) ** 2 * bm.p0.x + 2 * (1 - t) * t * bm.c.x + t * t * bm.p1.x, y: (1 - t) ** 2 * bm.p0.y + 2 * (1 - t) * t * bm.c.y + t * t * bm.p1.y});
+    ctx.save(); ctx.globalAlpha = bm.a; ctx.lineCap = 'round'; ctx.shadowColor = bm.col; ctx.shadowBlur = hc * .8;
+    for (const [lw, col] of [[hc * .55, bm.col], [hc * .2, '#fff']]) {
+      ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath();
+      const t0 = Math.max(0, bm.p - .45);
+      for (let i = 0; i <= 24; i++) { const q = pt(t0 + (bm.p - t0) * i / 24); i ? ctx.lineTo(HX(q.x), HY(q.y)) : ctx.moveTo(HX(q.x), HY(q.y)); }
+      ctx.stroke();
+    }
+    const h = pt(bm.p); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(HX(h.x), HY(h.y), hc * .45, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // おおきな こたえ → わかれる
+  if (G.big && G.big.a > 0) {
+    ctx.save(); ctx.globalAlpha = G.big.a; ctx.translate(HX(G.big.x), HY(G.big.y)); ctx.scale(G.big.s, G.big.s);
+    glowDigits('' + G.ans, 0, 0, dpx, numCols(G.ans), 1); ctx.restore();
+  }
+  for (const d of [G.dT, G.dO]) {
+    if (!d) continue;
+    ctx.save(); ctx.translate(HX(d.x), HY(d.y)); ctx.scale(d.s, d.s);
+    glowDigits('' + d.v, 0, 0, dpx, d.col, d.g); ctx.restore();
+  }
+  // しょうげきは
+  for (const r of G.rings) {
+    if (r.a <= 0) continue;
+    ctx.save(); ctx.globalAlpha = r.a; ctx.strokeStyle = r.col; ctx.lineWidth = hc * .3 * r.a + 1; ctx.shadowColor = r.col; ctx.shadowBlur = hc * .6;
+    ctx.beginPath(); ctx.arc(HX(r.x), HY(r.y), r.r * hc, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  }
+  // ヒント: 九九の かいだん
+  if (G.hint > 0) {
+    ctx.globalAlpha = G.hint;
+    const lx = tf.lx, lw = MATW - .15 - lx;
+    if (G.chantN <= 0) jtext('ヒント', X(lx + lw / 2), Y(.85), c * .6, P.yellow, {outline: '#000'});
+    ctx.globalAlpha = 1;
+    const rh = Math.min(L.portrait ? 1.35 : 1.25, 10.9 / G.b);
+    for (const row of G.ladder) {
+      const y = 1.75 + (row.k - 1) * rh + rh / 2, last = row.k === G.b, v = row.k * G.a;
+      const vs = last && G.reveal <= 0 ? '?' : '' + v;
+      const px = Math.min(rh * .68 / 7, (lw - 1.9) / 35) * c;
+      ctx.globalAlpha = row.a;
+      if (last) { ctx.fillStyle = `rgba(255,236,39,${.15 + .1 * Math.sin(T * 6)})`; rrect(X(lx), Y(y - rh * .48), (lw - 1.9) * c + px * 1.5, rh * .96 * c, c * .2); ctx.fill(); }
+      ctx.save(); ctx.translate(X(lx + .25), Y(y)); ctx.scale(row.sc, row.sc);
+      ptext(`${G.a}×${row.k}=` + vs, 0, 0, px, [AC, P.white, GRP, P.white, ...(vs === '?' ? [P.yellow] : numCols(v))], {align: 'left'});
+      ctx.restore();
+      if (row.k > 1) {
+        const ay = Y(y - rh / 2);
+        ptext('+' + G.a, X(MATW - .1), ay, px * .75, GRP, {align: 'right'});
+        ctx.strokeStyle = GRP; ctx.lineWidth = Math.max(1.5, c * .08);
+        ctx.beginPath(); ctx.arc(X(MATW - 1.6), ay, rh * .42 * c, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(X(MATW - 1.6), ay + rh * .42 * c); ctx.lineTo(X(MATW - 1.6) + c * .25, ay + rh * .42 * c - c * .2); ctx.lineTo(X(MATW - 1.6) + c * .25, ay + rh * .42 * c + c * .2); ctx.fillStyle = GRP; ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
   }
 }
 function drawClear() {
@@ -860,47 +937,102 @@ async function newQuestion() {
   let a, b;
   if (fast) { do { a = rnd(2, 9); b = rnd(1, 9); } while (a * 10 + b === G.last); } else [a, b] = G.qs[G.q];
   G.last = a * 10 + b;
-  Object.assign(G, {a, b, ans: a * b, counted: false, counting: false, missed: false, phase: 'intro', blocks: [], plates: [], totals: [], reveal: 0, qA: 0});
+  Object.assign(G, {a, b, ans: a * b, hinted: false, hinting: false, missed: false, phase: 'intro', reveal: 0, qA: 0,
+    bd: {aS: 0, bS: 0, xS: 0, line: 0, box: 0, aP: 0, bP: 0, tF: 0, oF: 0}, hint: 0, ladder: [], beams: [], rings: [],
+    rays: 0, rayC: null, big: null, dT: null, dO: null, chantN: 0});
   G.cat.happy = 0;
   const ch = makeChoices(a, b);
   pb.choices.forEach((bt, i) => Object.assign(bt, {val: ch[i], en: true, vis: false, sc: 0, shake: 0}));
   Object.assign(pb.count, {vis: false, sc: 0});
   if (!fast) sfx.whoosh();
   tw(G, {qA: 1}, fast ? .2 : .45, {ease: E.outBack});
-  await f.sleep(fast ? .05 : .25);
-  for (let i = 0; i < b; i++) {
-    const pl = {i, w: 0, fl: 0}; G.plates.push(pl); tw(pl, {w: 1}, .2);
-    for (let j = 0; j < a; j++) {
-      const bl = {row: i, x: cubeX(j), y: rowY(i) - .8, s: 0, a: 1, fl: 0};
-      G.blocks.push(bl); tw(bl, {y: rowY(i), s: 1}, .28, {delay: j * .02, ease: E.outBack});
-    }
-    sfx.pop(i);
-    await f.sleep(fast ? .03 : .13);
-  }
-  await f.sleep(fast ? .05 : .2);
+  const k = fast ? .3 : 1;
+  await f.sleep(.2 * k);
+  tw(G.bd, {aS: 1}, .4 * k, {ease: E.outBack}); sfx.pop(2);
+  await f.sleep(.2 * k);
+  tw(G.bd, {xS: 1}, .45 * k, {ease: E.outBack}); tw(G.bd, {bS: 1}, .4 * k, {delay: .1 * k, ease: E.outBack}); sfx.pop(4);
+  await f.sleep(.25 * k);
+  tw(G.bd, {line: 1}, .3 * k, {ease: E.outCubic}); noise(.25, {vol: .08, ft: 'bandpass', f: 1500, f2: 6000});
+  tw(G.bd, {box: 1}, .3 * k, {delay: .15 * k});
+  await f.sleep(.35 * k);
   if (!fast) speak(`${a} かける ${b} は?`);
   G.phase = 'ask';
   pb.choices.forEach((bt, i) => { bt.vis = true; tw(bt, {sc: 1}, fast ? .2 : .35, {delay: i * (fast ? .03 : .08), ease: E.outBack}); });
   if (!fast) { pb.count.vis = true; tw(pb.count, {sc: 1}, .35, {delay: .25, ease: E.outBack}); }
-  if (!G.hintShown && !fast) { G.hintShown = true; say('「かぞえる」で たしかめよう!', 3); }
+  if (!G.hintShown && !fast) { G.hintShown = true; say('こまったら「ヒント」を おしてね', 3); }
 }
-async function doCount(speed = 1) {
-  if (G.counted || G.counting) return;
+async function doHint() {
+  if (G.hinted || G.hinting) return;
   const f = curFlow(), pb = scenes.play;
-  G.counting = true;
+  G.hinting = true;
   tw(pb.count, {sc: 0}, .2, {ease: E.inCubic}).then(() => { pb.count.vis = false; });
-  const step = (G.b > 6 ? .3 : .4) * speed;
-  for (let i = 0; i < G.b; i++) {
-    const pl = G.plates[i]; pl.fl = 1; tw(pl, {fl: 0}, .4);
-    G.blocks.filter(bl => bl.row === i).forEach((bl, j) => {
-      bl.fl = 1; tw(bl, {fl: 0}, .35);
-      tw(bl, {s: 1.25}, .08, {delay: j * .02}).then(() => tw(bl, {s: 1}, .15));
-    });
-    const t = {i, a: 0, sc: 1.8, v: (i + 1) * G.a}; G.totals.push(t); tw(t, {a: 1, sc: 1}, .25, {ease: E.outBack});
-    sfx.count(i);
+  sfx.merge();
+  await tw(G, {hint: 1}, .45, {ease: E.inOutCubic}); f.check();
+  const step = G.b > 6 ? .22 : .3;
+  for (let k = 1; k <= G.b; k++) {
+    const row = {k, a: 0, sc: 1.7}; G.ladder.push(row);
+    tw(row, {a: 1, sc: 1}, .25, {ease: E.outBack});
+    sfx.count(k - 1);
     await f.sleep(step);
   }
-  G.counted = true; G.counting = false;
+  G.hinted = true; G.hinting = false;
+}
+async function answerAnim(f, fast) {
+  const s = G.ans, t = Math.floor(s / 10), o = s % 10, bd = G.bd, tf = hissanTf();
+  const cT = {x: colX(1), y: BOX_Y}, cO = {x: colX(2), y: BOX_Y};
+  const mid = {x: 5, y: BOX_Y};
+  const scr = q => ({x: L.mat.x + (tf.hx + q.x * tf.hs) * L.c, y: L.mat.y + (tf.vy + q.y * tf.hs) * L.c});
+  const mk = (v, x, y, s0, col) => ({v, x, y, s: s0, g: 0, col});
+  if (fast) {
+    if (t) { G.dT = mk(t, cT.x, cT.y, 0, TEN.base); tw(G.dT, {s: 1}, .2, {ease: E.outBack}); }
+    G.dO = mk(o, cO.x, cO.y, 0, ONE.base); tw(G.dO, {s: 1}, .2, {ease: E.outBack});
+    bd.tF = t ? 1 : 0; bd.oF = 1; tw(bd, {tF: 0, oF: 0}, .4);
+    return;
+  }
+  // 1. ふたつの かずが ひかる
+  sfx.shine();
+  tw(bd, {aP: 1}, .2).then(() => tw(bd, {aP: .4}, .3));
+  tw(bd, {bP: 1}, .2, {delay: .12}).then(() => tw(bd, {bP: .4}, .3));
+  await f.sleep(.4);
+  // 2. ビームが あつまる
+  const aPos = {x: colX(2), y: ROW_A}, bPos = {x: colX(2), y: ROW_B};
+  G.beams = [{p0: aPos, c: {x: -1.5, y: 7}, p1: mid, p: 0, a: 1, col: AC},
+             {p0: bPos, c: {x: 11, y: 8.5}, p1: mid, p: 0, a: 1, col: GRP}];
+  tone(mf(48), .6, {type: 'p25', slide: 4, vol: .1}); noise(.6, {vol: .1, ft: 'bandpass', f: 400, f2: 6000});
+  G.beams.forEach(bm => tw(bm, {p: 1}, .6, {ease: E.inCubic}));
+  await f.sleep(.6);
+  // 3. どかーん!
+  sfx.carry(); shake = .5;
+  const sm = scr(mid);
+  burst(sm.x, sm.y, 60, [P.yellow, P.white, AC, GRP], 1.3, 1.2);
+  G.rayC = mid; tw(G, {rays: 1}, .3);
+  for (const [d, col] of [[0, P.white], [.12, P.yellow], [.24, AC]]) {
+    const r = {x: mid.x, y: mid.y, r: .5, a: 1, col}; G.rings.push(r); tw(r, {r: 9, a: 0}, .9, {delay: d, ease: E.outCubic});
+  }
+  G.beams.forEach(bm => tw(bm, {a: 0}, .3));
+  tw(bd, {aP: 0, bP: 0}, .5);
+  G.big = {x: mid.x, y: mid.y, s: 0, a: 1}; tw(G.big, {s: 1.6}, .35, {ease: E.outBack});
+  await f.sleep(.7);
+  // 4. 十のくらい と 一のくらい に わかれる
+  const w = 6 * .4 * 1.6;
+  G.big.a = 0;
+  const moves = [];
+  if (t) { G.dT = mk(t, mid.x - w / 2, mid.y, 1.6, TEN.base); G.dT.g = 1; moves.push(tw(G.dT, {x: cT.x, y: cT.y, s: 1}, .45, {ease: E.inOutCubic})); }
+  G.dO = mk(o, t ? mid.x + w / 2 : mid.x, mid.y, 1.6, ONE.base); G.dO.g = 1; moves.push(tw(G.dO, {x: cO.x, y: cO.y, s: 1}, .45, {ease: E.inOutCubic}));
+  tone(mf(72), .3, {slide: 1.5, vol: .08});
+  await Promise.all(moves); f.check();
+  sfx.thud(); shake = .25;
+  for (const [d, c, col] of [[t ? G.dT : null, cT, TEN.base], [G.dO, cO, ONE.base]]) {
+    if (!d) continue;
+    const r = {x: c.x, y: c.y, r: .3, a: 1, col}; G.rings.push(r); tw(r, {r: 3.5, a: 0}, .5, {ease: E.outCubic});
+    const sc = scr(c); burst(sc.x, sc.y, 18, [col, P.white], .6, .8);
+    tw(d, {g: .35}, .6);
+  }
+  bd.tF = t ? 1 : 0; bd.oF = 1; tw(bd, {tF: 0, oF: 0}, .6);
+  // 5. となえる
+  speak(kuku(G.a, G.b));
+  tw(G, {chantN: kuku(G.a, G.b).length + .99}, 1.1, {ease: E.linear});
+  tw(G, {rays: 0}, 1.2, {delay: .8});
 }
 async function onChoice(btn) {
   if (G.phase !== 'ask' || !btn.en) return;
@@ -910,8 +1042,9 @@ async function onChoice(btn) {
     G.missed = true; G.combo = 0;
     G.cat.shake = 1; tw(G.cat, {shake: 0}, .5);
     if (fast) return;
-    if (!G.counted && !G.counting) { say('おしい! いっしょに かぞえよう'); run(doCount()); }
-    else say('いちばん したの かずを みてね');
+    if (!G.hinted && !G.hinting) { say('おしい! ヒントを みてみよう'); run(doHint()); }
+    else if (G.b === 1) say('×1 は そのままの かずだよ');
+    else say(`ひとつ うえの こたえ に +${G.a} だよ`);
     return;
   }
   G.phase = 'done'; G.combo++;
@@ -919,10 +1052,12 @@ async function onChoice(btn) {
   burst(btn.x + btn.w / 2, btn.y + btn.h / 2, fast ? 25 : 45, FIRE, 1.2, 1.1);
   tw(btn, {sc: 1.08}, .15, {ease: E.outBack});
   pb.choices.forEach(b => { if (b !== btn) tw(b, {sc: 0}, .2, {ease: E.inCubic}); });
+  if (pb.count.vis) tw(pb.count, {sc: 0}, .2).then(() => { pb.count.vis = false; });
   G.cat.happy = 1; tw(G.cat, {jump: 1}, .15, {ease: E.outCubic}).then(() => tw(G.cat, {jump: 0}, .2, {ease: E.inCubic}));
   if (fast) {
     G.score++; sfx.coin(); if (G.combo >= 3) sfx.combo(Math.min(G.combo, 8));
     tw(G, {reveal: 1}, .2, {ease: E.outBack});
+    await answerAnim(f, true);
     if (G.combo >= 3) popText(`${G.combo}れんぞく!`, L.x0 + L.w / 2, L.mat.y + L.mat.h * .5, L.u * .08, pick([P.yellow, P.pink, P.green]), {life: .8});
     save();
     await f.sleep(.45);
@@ -932,20 +1067,17 @@ async function onChoice(btn) {
   sfx.correct();
   say(pick(PRAISE), 1.8, P.red);
   G.flyers.push({x: btn.x + btn.w / 2, y: btn.y + btn.h / 2, t: -.15, dur: .75, i: G.q, gold: !G.missed});
-  if (!G.counted) {
-    if (!G.counting) await doCount(.45); f.check();
-    while (G.counting) await f.sleep(.1);
-  }
-  speak(kuku(G.a, G.b));
+  while (G.hinting) await f.sleep(.1);
+  await answerAnim(f, false);
   tw(G, {reveal: 1}, .5, {ease: E.outBack});
   burst(G.eqPos.x, G.eqPos.y, 25, [P.yellow, P.white, P.pink], .7, .8);
   if (G.combo >= 3) {
     await f.sleep(.3);
-    popText(`${G.combo}れんぞく!`, L.x0 + L.w / 2, L.mat.y + L.mat.h * .35, L.u * .09, pick([P.yellow, P.pink, P.green]), {life: 1.4});
+    popText(`${G.combo}れんぞく!`, L.x0 + L.w / 2, L.mat.y + L.mat.h * .3, L.u * .09, pick([P.yellow, P.pink, P.green]), {life: 1.4});
     sfx.combo(G.combo);
   }
   save();
-  await f.sleep(2.0);
+  await f.sleep(2.2);
   G.q++;
   if (G.q >= G.n) await stageClear(f); else await newQuestion();
 }
