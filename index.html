@@ -27,6 +27,7 @@ canvas{display:block;position:fixed;left:0;top:0}
 <body>
 <canvas id="c"></canvas>
 <div id="safe"></div>
+<script src="fever.js"></script>
 <script>
 'use strict';
 // =====================================================================
@@ -190,11 +191,11 @@ const LEAD = [72,0,72,74,76,0,72,0, 77,0,76,0,74,0,0,0, 74,0,74,76,77,0,74,0, 79
               72,0,76,0,79,0,84,0, 81,0,79,0,77,0,76,0, 74,0,77,0,76,0,74,0, 72,0,0,0,0,0,0,0];
 const BASS = [48,0,55,0,48,0,55,0, 53,0,57,0,55,0,59,0, 55,0,59,0,55,0,59,0, 48,0,55,0,48,0,55,0,
               48,0,52,0,55,0,52,0, 53,0,57,0,53,0,57,0, 55,0,59,0,55,0,59,0, 48,0,55,0,48,0,0,0];
-const BGM = {timer: null, step: 0, next: 0,
+const BGM = {timer: null, step: 0, next: 0, st: .19,
   start() { if (!S.ac || this.timer) return; this.step = 0; this.next = S.ac.currentTime + .1; this.timer = setInterval(() => this.tick(), 40); },
   stop() { if (this.timer) clearInterval(this.timer); this.timer = null; },
   tick() {
-    const ac = S.ac; const st = 0.19;
+    const ac = S.ac; const st = this.st || .19;
     while (this.next < ac.currentTime + .2) {
       const i = this.step % 64, at = this.next;
       if (LEAD[i]) tone(mf(LEAD[i]), st * .9, {at, vol: .07, dest: S.musBus});
@@ -417,6 +418,7 @@ const STAGES = [
   ...ORDER.map(d => ({kind: 'dan', d, name: `${d}のだん`})),
   {kind: 'mix', name: 'ミックス'},
   {kind: 'time', name: 'タイムアタック'},
+  {kind: 'fever', name: 'のうじるモード'},
 ];
 const PRAISE = ['すごい!', 'やったね!', 'てんさい!', 'ばっちり!', 'かんぺき!', 'せいかい!', 'いいね!'];
 SAVE.master = SAVE.master || {};
@@ -457,7 +459,7 @@ function hissanTf() {
 let scene = null, sceneName = '';
 const scenes = {};
 function setScene(n) {
-  tweens = []; timers = []; parts = []; pops = [];
+  tweens = []; timers = []; parts = []; pops = []; FV.reset();
   sceneName = n; scene = scenes[n]; scene.enter && scene.enter(); layout();
 }
 
@@ -523,6 +525,7 @@ scenes.select = {
   },
 };
 function drawCard(b, st, i) {
+  if (st.kind === 'fever') return FV.drawCard(b, st.name, SAVE.best[i]);
   const w = b.w, h = b.h - b.h * .09, top = -h / 2;
   const best = i >= 0 ? SAVE.best[i] : null;
   const emo = (e, x, y, sz) => { ctx.font = `${Math.round(sz)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(e, x, y); };
@@ -616,12 +619,13 @@ scenes.hyou = {
 let G = null;
 function startStage(si) {
   const st = STAGES[si];
-  G = {si, st, mode: st.kind, q: 0, qs: st.kind === 'time' ? null : makeQs(st, si), stars: [], combo: 0, score: 0, time: 60, running: false,
+  const rush = st.kind === 'time' || st.kind === 'fever';
+  G = {si, st, mode: st.kind, q: 0, qs: rush ? null : makeQs(st, si), stars: [], combo: 0, score: 0, time: st.kind === 'fever' ? 30 : 60, running: false, maxCombo: 0, right: 0,
     a: 1, b: 1, ans: 1, blocks: [], plates: [], totals: [], phase: 'intro', qA: 0, reveal: 0, bubble: null,
     cat: {jump: 0, happy: 0, shake: 0}, flyers: [], clear: null, last: -1, hintShown: false};
   G.n = G.qs ? G.qs.length : 0; G.stars = Array(G.n).fill(0);
   setScene('play');
-  run(G.mode === 'time' ? countdown() : newQuestion());
+  run(rush ? countdown() : newQuestion());
 }
 scenes.play = {
   enter() {
@@ -651,7 +655,7 @@ scenes.play = {
     const {x0, y0, w, h} = L, bar = L.bar;
     Object.assign(this.home, {x: x0 + 6, y: y0 + 6, w: bar, h: bar});
     Object.assign(this.say, {x: x0 + w - bar - 6, y: y0 + 6, w: bar, h: bar});
-    this.say.vis = G.mode !== 'time';
+    this.say.vis = G.mode !== 'time' && G.mode !== 'fever';
     let ma;
     if (L.portrait) {
       const qh = clamp(h * .11, 56, 140);
@@ -682,7 +686,7 @@ scenes.play = {
     for (const f of G.flyers.filter(f => f.t >= f.dur)) { G.stars[f.i] = f.gold ? 2 : 1; sfx.coin(); const p = slotPos(f.i); burst(p.x, p.y, 14, [P.yellow, P.white], .5, .7); }
     G.flyers = G.flyers.filter(f => f.t < f.dur);
     if (G.bubble && (G.bubble.life -= dt) <= 0) G.bubble = null;
-    if (G.mode === 'time' && G.running && !G.clear) {
+    if ((G.mode === 'time' || G.mode === 'fever') && G.running && !G.clear) {
       const before = Math.ceil(G.time);
       G.time -= dt;
       if (G.time <= 10 && Math.ceil(G.time) !== before && G.time > 0) tone(mf(96), .06, {vol: .08});
@@ -714,6 +718,7 @@ function slotPos(i) {
   return {x: x1 + step * (i + .5), y: L.y0 + 6 + bar / 2, s};
 }
 function drawPlayTop() {
+  if (G.mode === 'fever') { FV.drawHud(G.score, G.time, 30, G.combo); return; }
   if (G.mode === 'time') {
     const x1 = L.x0 + L.bar + 16, x2 = L.x0 + L.w - 16, y = L.y0 + 6 + L.bar * .25, h = L.bar * .5;
     const sw = Math.min(L.bar * 2.6, (x2 - x1) * .35), bx = x1 + sw, bw = x2 - bx;
@@ -893,6 +898,7 @@ function drawMat() {
   }
 }
 function drawClear() {
+  if (G.mode === 'fever') { FV.drawResult(G.clear.a, G.score, G.maxCombo, SAVE.best[G.si] || 0, G.clear.rec); scenes.play.clearBtns.forEach(drawBtn); return; }
   const cl = G.clear, u = L.u, cx = L.x0 + L.w / 2;
   ctx.fillStyle = `rgba(10,14,40,${.75 * cl.a})`; ctx.fillRect(0, 0, W, H);
   ctx.globalAlpha = cl.a;
@@ -924,16 +930,19 @@ async function countdown() {
   const f = newFlow();
   Object.assign(G, {phase: 'intro', qA: 0});
   await f.sleep(.4);
-  for (const t of ['3', '2', '1']) {
-    popText(t, L.x0 + L.w / 2, L.y0 + L.h * .45, L.u * .3, P.yellow, {pix: true, life: .9}); tone(mf(72), .15, {vol: .12});
-    await f.sleep(.8);
+  if (G.mode === 'fever') await FV.countdown(f);
+  else {
+    for (const t of ['3', '2', '1']) {
+      popText(t, L.x0 + L.w / 2, L.y0 + L.h * .45, L.u * .3, P.yellow, {pix: true, life: .9}); tone(mf(72), .15, {vol: .12});
+      await f.sleep(.8);
+    }
+    popText('スタート!', L.x0 + L.w / 2, L.y0 + L.h * .45, L.u * .12, P.green, {life: 1}); tone(mf(84), .4, {vol: .14});
   }
-  popText('スタート!', L.x0 + L.w / 2, L.y0 + L.h * .45, L.u * .12, P.green, {life: 1}); tone(mf(84), .4, {vol: .14});
   G.running = true;
   await newQuestion();
 }
 async function newQuestion() {
-  const f = newFlow(), pb = scenes.play, fast = G.mode === 'time';
+  const f = newFlow(), pb = scenes.play, fast = G.mode === 'time' || G.mode === 'fever';
   let a, b;
   if (fast) { do { a = rnd(2, 9); b = rnd(1, 9); } while (a * 10 + b === G.last); } else [a, b] = G.qs[G.q];
   G.last = a * 10 + b;
@@ -1036,11 +1045,12 @@ async function answerAnim(f, fast) {
 }
 async function onChoice(btn) {
   if (G.phase !== 'ask' || !btn.en) return;
-  const f = curFlow(), pb = scenes.play, fast = G.mode === 'time';
+  const f = curFlow(), pb = scenes.play, fast = G.mode === 'time' || G.mode === 'fever';
   if (btn.val !== G.ans) {
     sfx.wrong(); btn.en = false; btn.shake = 1; tw(btn, {shake: 0}, .5);
     G.missed = true; G.combo = 0;
     G.cat.shake = 1; tw(G.cat, {shake: 0}, .5);
+    if (G.mode === 'fever') { FV.miss(); G.time = Math.max(0, G.time - 3); popText('-3びょう', btn.x + btn.w / 2, btn.y, L.u * .06, P.red); }
     if (fast) return;
     if (!G.hinted && !G.hinting) { say('おしい! ヒントを みてみよう'); run(doHint()); }
     else if (G.b === 1) say('×1 は そのままの かずだよ');
@@ -1054,6 +1064,18 @@ async function onChoice(btn) {
   pb.choices.forEach(b => { if (b !== btn) tw(b, {sc: 0}, .2, {ease: E.inCubic}); });
   if (pb.count.vis) tw(pb.count, {sc: 0}, .2).then(() => { pb.count.vis = false; });
   G.cat.happy = 1; tw(G.cat, {jump: 1}, .15, {ease: E.outCubic}).then(() => tw(G.cat, {jump: 0}, .2, {ease: E.inCubic}));
+  if (G.mode === 'fever') {
+    const mult = Math.min(10, 1 + Math.floor(G.combo / 5)), pts = 10 * mult;
+    G.score += pts; G.right++; G.maxCombo = Math.max(G.maxCombo, G.combo); G.time = Math.min(45, G.time + 2);
+    FV.hit(btn.x + btn.w / 2, btn.y + btn.h / 2, G.combo);
+    popText(`+${pts}` + (mult > 1 ? ` ×${mult}` : ''), btn.x + btn.w / 2, btn.y - L.u * .02, L.u * .06, P.yellow);
+    tw(G, {reveal: 1}, .2, {ease: E.outBack});
+    await answerAnim(f, true);
+    save();
+    await f.sleep(.4);
+    if (G.running) await newQuestion();
+    return;
+  }
   if (fast) {
     G.score++; sfx.coin(); if (G.combo >= 3) sfx.combo(Math.min(G.combo, 8));
     tw(G, {reveal: 1}, .2, {ease: E.outBack});
@@ -1102,9 +1124,10 @@ async function timeUp() {
   G.phase = 'clear';
   const rec = G.score > (SAVE.best[G.si] || 0);
   if (rec) SAVE.best[G.si] = G.score;
-  SAVE.stars += G.score; save();
+  SAVE.stars += G.mode === 'fever' ? G.right : G.score; save();
   G.clear = {rec}; showClear();
-  speak(`${G.score}もん せいかい!` + (rec ? ' しんきろく!' : ''), .3);
+  if (G.mode === 'fever') speak(`${G.score}てん! さいだい ${G.maxCombo} コンボ!` + (rec ? ' しんきろく!' : ''), .3);
+  else speak(`${G.score}もん せいかい!` + (rec ? ' しんきろく!' : ''), .3);
   await f.sleep(1.2);
   pb.clearBtns.forEach((b, i) => { b.vis = b !== pb.next; b.sc = 0; tw(b, {sc: 1}, .4, {delay: i * .1, ease: E.outBack}); });
 }
@@ -1131,14 +1154,14 @@ function layout() {
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now; T += dt;
-  updTweens(dt); updTimers(dt); updFx(dt);
+  updTweens(dt); updTimers(dt); updFx(dt); FV.update(dt);
   if (scene) scene.update(dt);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.imageSmoothingEnabled = false;
-  drawBg();
+  drawBg(); FV.drawBack();
   if (shake > 0) { const a = shake * L.u * .03; ctx.translate((Math.random() - .5) * a, (Math.random() - .5) * a); }
   scene.draw();
-  drawFx();
+  drawFx(); FV.drawFront();
   requestAnimationFrame(frame);
 }
 cv.addEventListener('pointerdown', e => {
